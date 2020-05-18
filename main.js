@@ -5,12 +5,13 @@ Promise.all([
     faceapi.nets.faceLandmark68Net.loadFromUri('/models'),
     faceapi.nets.ssdMobilenetv1.loadFromUri('/models')
 ]).then(start);
-console.log(faceapi);
 
-function start(){
+async function start(){
     const container = document.createElement('div');
     container.style.position = 'relative';
     document.body.append(container);
+    const labeledFaceDescriptors = await loadTrainingData();
+    const faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.6)
     document.body.append('Loaded');
     imageUpload.addEventListener('change', async () => {
         const image = await faceapi.bufferToImage(imageUpload.files[0]);
@@ -22,9 +23,10 @@ function start(){
         const detections = await faceapi.detectAllFaces(image)
         .withFaceLandmarks().withFaceDescriptors();
         const resizeDetections = faceapi.resizeResults(detections, displaySize);
-        resizeDetections.forEach(detection => {
-            const box = detection.detection.box;
-            const drawBox = new faceapi.draw.DrawBox(box, { label: 'Face'});  
+        const results = resizeDetections.map(d => faceMatcher.findBestMatch(d.descriptor));
+        results.forEach((result, index) => {
+            const box = resizeDetections[index].detection.box;
+            const drawBox = new faceapi.draw.DrawBox(box, { label: result.toString()});  
             drawBox.draw(canvas);
         });
     });
@@ -34,9 +36,14 @@ function loadTrainingData(){
     const folders = ['buhari', 'goodluck', 'obasanjo', 'yar-adua'];
     return Promise.all(
         folders.map(async folder => {
+            const descriptions = [];
             for(let i = 1; i <= 2; i++){
-                const img = await faceapi.fetchImage(``);
+                const img = await faceapi.fetchImage(`https://raw.githubusercontent.com/D-Gr3at/face_recognition/tree/master/training-data/${folder}/${i}.jpg`);
+                const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptors();
+                descriptions.push(detections.descriptor);
             }
+
+            return new faceapi.LabeledFaceDescriptors(folder, descriptions);
         })
     );
 }
